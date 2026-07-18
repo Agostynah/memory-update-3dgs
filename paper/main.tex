@@ -31,6 +31,8 @@ Independent Researcher\\
 Real-time 3D reconstruction systems (e.g.\ 3D Gaussian Splatting) face a fundamental resource allocation problem: given thousands to millions of scene entities and limited per-frame compute, which entities should be updated? We show that entity update benefits are \textit{non-separable}---the value of updating entity A depends on whether B is also updated---violating the independence assumption underlying greedy selection. We formalize this as a budgeted subset selection problem, measure coupling ($\kappa$) across entity pairs in 6 real 3DGS scenes (bicycle, bonsai, counter, garden, room, kitchen), and train a lightweight Q-network that learns to predict marginal update benefit. Mean $|\kappa| = 0.0008$ across scenes (range $0.0006$--$0.0012$), with $22.3\%$ of pairs coupled on average. The learned Q-function outperforms a motion/uncertainty heuristic by $+17.1\%$ on average. A CEM planner operating on top of Q-values further improves this to $+22.2\%$. These results demonstrate that non-separable coupling is a general phenomenon in 3DGS and can be exploited for better budgeted entity selection.
 \end{abstract}
 
+\noindent\textbf{Code:} \url{https://github.com/Agostynah/memory-update-3dgs}
+
 \section{Introduction}
 \label{sec:intro}
 
