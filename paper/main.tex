@@ -1,0 +1,305 @@
+\documentclass[10pt,twocolumn]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{times}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{subcaption}
+\usepackage[accsupp]{axessibility}
+
+\graphicspath{{../figures/}}
+\newcommand{\argmax}{\operatornamewithlimits{argmax}}
+
+\title{Memory Update Decisions as Constrained Resource Allocation in 3D Reconstruction}
+
+\author{Agostina Silva\\
+Independent Researcher\\
+{\tt\small agostina.dev.dc@gmail.com}
+}
+
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Real-time 3D reconstruction systems (e.g.\ 3D Gaussian Splatting) face a fundamental resource allocation problem: given thousands to millions of scene entities and limited per-frame compute, which entities should be updated? We show that entity update benefits are \textit{non-separable}---the value of updating entity A depends on whether B is also updated---violating the independence assumption underlying greedy selection. We formalize this as a budgeted subset selection problem, measure coupling ($\kappa$) across entity pairs in 6 real 3DGS scenes (bicycle, bonsai, counter, garden, room, kitchen), and train a lightweight Q-network that learns to predict marginal update benefit. Mean $|\kappa| = 0.0008$ across scenes (range $0.0006$--$0.0012$), with $22.3\%$ of pairs coupled on average. The learned Q-function outperforms a motion/uncertainty heuristic by $+17.1\%$ on average. A CEM planner operating on top of Q-values further improves this to $+22.2\%$. These results demonstrate that non-separable coupling is a general phenomenon in 3DGS and can be exploited for better budgeted entity selection.
+\end{abstract}
+
+\section{Introduction}
+\label{sec:intro}
+
+3D Gaussian Splatting (3DGS)~\cite{kerbl3dgs} represents scenes as collections of anisotropic 3D Gaussians. Real-time rendering iterates over all Gaussians each frame. Under computational budgets typical of mobile devices, robotics, or VR headsets, updating every entity every frame is infeasible. The system must choose a subset of $K$ entities to update, given a per-frame budget.
+
+Current practice relies on heuristics: update entities with largest motion, highest uncertainty, or simply random selection. These approaches implicitly assume that entity selection is \textit{separable}---the benefit of updating entity $i$ does not depend on which other entities are also updated. We demonstrate that this assumption is false.
+
+\textbf{Key insight.} When multiple 3D Gaussians overlap, their contributions to the rendered image are superposed. Updating entity $A$ changes the same pixels that $B$ affects. The combined benefit of updating both is not the sum of individual benefits. This \textit{coupling} means greedy selection by individual scores can be arbitrarily suboptimal~\cite{krause2005near}.
+
+We make the following contributions:
+\begin{itemize}
+    \item We formalize memory update in 3D reconstruction as a budgeted subset selection problem and define coupling $\kappa$ to measure non-separability.
+    \item We demonstrate $\kappa > 0$ across 6 real 3DGS scenes (mean $|\kappa|=0.0008$, $22.3\%$ of entity pairs coupled).
+    \item We train a lightweight Q-network (3-layer MLP, $\sim$40KB) that predicts per-entity update benefit and selects entities at inference.
+    \item The learned Q-function outperforms a strong heuristic by $+17.1\%$; a CEM planner on top of Q-values improves this to $+22.2\%$.
+    \item Ablation study confirms that cluster identity is the most critical feature for Q-network accuracy.
+\end{itemize}
+
+\section{Related Work}
+
+\textbf{3DGS efficiency.} Several works address the computational cost of 3DGS. Luiten et al.~\cite{luiten2024compact} propose compact scene representation via pruning and quantization. Yu et al.~\cite{yu2024mcmc} use MCMC sampling for densification control. Shen et al.~\cite{shen2025lodgs} introduce LOD-based rendering for large scenes. These methods optimize the static scene representation but do not address per-frame update selection under budget constraints.
+
+\textbf{Budgeted subset selection.} The problem of selecting a subset of items subject to cardinality constraints is well-studied in submodular optimization~\cite{krause2005near,wei2015constrained}. However, submodularity---the property of diminishing returns that enables efficient greedy algorithms---is assumed, not verified. We show that entity update benefits are non-monotone and potentially non-submodular, motivating learned selection.
+
+\textbf{Learning for resource allocation.} Reinforcement learning has been applied to sensor scheduling~\cite{leong2020deep}, caching~\cite{sadeghi2019deep}, and neural network layer selection~\cite{wu2018blockdrop}. To our knowledge, ours is the first application to entity update decisions in 3D reconstruction.
+
+\section{Problem Formulation}
+
+Consider a scene with $N$ entities (Gaussians) tracked over $T$ frames. At each frame $t$, we observe noisy entity states $G_t^{\text{obs}}$ (rendered from noisy parameters) and have access to ground truth $G_t^*$ (rendered from true parameters). We have budget $K \ll N$ updates.
+
+Define the benefit of updating a subset $S \subseteq \{1,\ldots,N\}$:
+
+\begin{equation}
+R(S, t) = \text{MSE}(G_t^*, G_t^{\text{obs}}) - \text{MSE}(G_t^*, G_t^{(S)})
+\end{equation}
+
+where $G_t^{(S)}$ is the rendering after updating exactly entities in $S$ to their true parameters.
+
+\textbf{Non-separability.} For entities $i$ and $j$, define pairwise coupling:
+
+\begin{equation}
+\kappa_{ij}(t) = R(\{i,j\}, t) - (R(\{i\}, t) + R(\{j\}, t))
+\end{equation}
+
+$\kappa_{ij} = 0$ indicates separable benefits; $\kappa_{ij} \neq 0$ indicates coupling. When $\kappa_{ij} > 0$, the joint benefit exceeds the sum of individual benefits (complementarity). When $\kappa_{ij} < 0$, there is redundancy.
+
+\textbf{Selection objective.} At each frame $t$, given budget $K$, solve:
+
+\begin{equation}
+S_t^* = \argmax_{S: |S| = K} R(S, t)
+\end{equation}
+
+We compare three approaches:
+\begin{itemize}
+    \item \textbf{Oracle:} brute-force evaluation of $\binom{N}{K}$ subsets (feasible for $K \leq 4$).
+    \item \textbf{Greedy heuristic:} rank by $h(i,t) = \|\Delta G_i\| + \|G_i^{\text{obs}} - G_i^*\| + (1 - c_i)$ where $\Delta G_i$ is motion and $c_i$ is confidence.
+    \item \textbf{Learned Q:} rank by $Q_\theta(i,t)$, a learned predictor of $R(\{i\}, t)$.
+\end{itemize}
+
+\section{Method}
+
+\subsection{Voxel Proxy World}
+
+We construct a controlled 3D environment. The world is a $16^3$ voxel grid. Each entity is a 3D Gaussian with position $\mu_e \in \mathbb{R}^3$, isotropic scale $\sigma_e$, and amplitude $a_e$. The rendered value at voxel $(x,y,z)$ is:
+
+\begin{equation}
+v(x,y,z) = \sum_{e=1}^N a_e \exp\left(-\frac{\|(x,y,z) - \mu_e\|^2}{2\sigma_e^2}\right)
+\end{equation}
+
+$\text{MSE}(a,b) = \frac{1}{G^3} \sum_{x,y,z} (a_{xyz} - b_{xyz})^2$.
+
+Entities move via Brownian motion with cluster attraction (6 clusters). Observations add Gaussian noise scaled per entity. $N=80$, $T=120$, yielding 9600 training samples.
+
+\textbf{Real data extension.} We download 6 pretrained 3DGS scenes from the Mip-NeRF 360 dataset~\cite{mipnerf360} (bicycle, bonsai, counter, garden, room, kitchen; 273K--4.4M Gaussians each, obtained from \texttt{dylanebert/3dgs}). For each scene, filter valid Gaussians and run KMeans ($k=80$) to form meta-entities preserving spatial structure. Meta-entity position is the cluster centroid; size is proportional to cluster radius. Motion and observation noise follow the same generative process as the synthetic world, allowing consistent evaluation across scenes.
+
+\begin{table}[t]
+\centering
+\caption{Entity parameters across 6 real 3DGS scenes. Scenes sorted by coupling strength.}
+\label{tab:params}
+\begin{tabular}{lrrr}
+\toprule
+Scene & Gaussians (K) & $|\kappa|$ mean & Coupled \% \\
+\midrule
+room & 1130 & 0.0006 & 16.5\% \\
+kitchen & 1685 & 0.0006 & 17.6\% \\
+bonsai & 273 & 0.0007 & 17.6\% \\
+counter & 1029 & 0.0008 & 22.2\% \\
+bicycle & 568 & 0.0009 & 27.1\% \\
+garden & 4386 & 0.0012 & 32.6\% \\
+\midrule
+Mean & -- & 0.0008 & 22.3\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Feature Design}
+
+For each entity $e$ at frame $t$, we compute 16 features:
+\begin{itemize}
+    \item \textbf{Position (3):} $\mu_e / G$ (normalized to $[0,1]$)
+    \item \textbf{Motion (3):} $\mu_e(t) - \mu_e(t-1)$ if $t>0$, else zero
+    \item \textbf{Uncertainty (1):} $\|G_t^{\text{obs}} - G_t^*\| / G$
+    \item \textbf{Confidence (1):} $c_e = 1 - 0.3 \cdot d_e / \sigma_e$ where $d_e$ is distance from cluster center
+    \item \textbf{Scale (1):} $\sigma_e / G$
+    \item \textbf{Amplitude (1):} $a_e$
+    \item \textbf{Overlap count (1):} fraction of entities with pairwise IoU $> 0.05$
+    \item \textbf{Cluster ID (5):} one-hot encoding of cluster membership
+\end{itemize}
+
+\subsection{Q-Network}
+
+We train a small MLP to predict $R(\{e\}, t)$:
+
+\[
+16 \to 64 \to 32 \to 1,
+\quad \text{ReLU, Dropout(0.1)}
+\]
+
+Optimizer: AdamW (lr=1e-3, weight decay=0.01). Targets standardized to zero mean, unit variance. Early stopping with 200 epochs max. Training takes $\sim$5 minutes on CPU. Inference is $\sim$0.1ms per entity on CPU.
+
+\subsection{CEM Planner}
+\label{sec:cem}
+
+Independent Q-scoring cannot capture pairwise coupling during selection. To address this, we augment Q-scores with a Cross-Entropy Method (CEM) planner~\cite{rubinstein1999cross}. CEM iteratively refines a sampling distribution over entity subsets:
+
+\begin{enumerate}
+    \item Initialize a categorical proposal distribution $\mathbf{p}^{(0)}$ proportional to $\max(Q_\theta(i), 0) + \epsilon$.
+    \item For iteration $m = 1,\ldots,M$:
+    \begin{enumerate}
+        \item Draw $S$ candidate subsets of size $K$ from $\mathbf{p}^{(m-1)}$.
+        \item Evaluate each subset via the world model $R(S, t)$.
+        \item Set $\mathbf{p}^{(m)}$ to the empirical distribution of the top $E$ elite subsets (weighted combination: $0.7\mathbf{p}^{(m)} + 0.3\mathbf{p}^{(m-1)}$).
+    \end{enumerate}
+    \item Return the best subset found.
+\end{enumerate}
+
+We use $M=4$ iterations, $S=80$ samples, $E=16$ elites. CEM adds $\sim$50ms per budget level, negligible compared to per-frame rendering cost.
+
+\section{Experiments}
+
+\paragraph{Coupling measurement ($\kappa$).}
+For each dataset, we compute $\kappa_{ij}$ for all pairs at $t=0$. We report mean $|\kappa|$ and fraction of pairs exceeding $|\kappa| > 0.001$.
+
+\paragraph{Regret.}
+For $K = 2,3,4,5$, we compare greedy selection against brute-force oracle over 20 random frames (sampling 3000 subsets when $\binom{N}{K} > 3000$).
+
+\paragraph{Q-learning.}
+Train Q-network on 9600 samples (80 entities $\times$ 120 frames). Evaluate on held-out 30 frames.
+
+\paragraph{Selection quality.}
+At each budget $K=1,\ldots,8$, select top-K entities by heuristic score, Q-score, and oracle (for $K \leq 4$). Report average MSE across 30 evaluation frames.
+
+\section{Results}
+
+\begin{table}[t]
+\centering
+\caption{Main results across 6 real 3DGS scenes. Q and CEM improvement measured against the motion/uncertainty heuristic. Oracle gap computed at $K=4$ using 2000 sampled subsets.}
+\label{tab:results}
+\begin{tabular}{lcccccc}
+\toprule
+Dataset & $|\kappa|$ mean & Val loss & Q improv. & CEM improv. & Oracle gap (K=4) & $Q > H$ \\
+\midrule
+bicycle & 0.0009 & 0.37 & $+17.0\%$ & $+22.6\%$ & $-6.0\%$ & All K \\
+bonsai & 0.0007 & 0.44 & $+18.5\%$ & $+23.7\%$ & $-3.8\%$ & All K \\
+counter & 0.0008 & 0.36 & $+13.3\%$ & $+17.1\%$ & $-5.5\%$ & All K \\
+garden & 0.0012 & 0.38 & $+14.1\%$ & $+19.7\%$ & $-4.6\%$ & All K \\
+room & 0.0006 & 0.43 & $+21.5\%$ & $+25.6\%$ & $-7.3\%$ & All K \\
+kitchen & 0.0006 & 0.37 & $+18.4\%$ & $+24.4\%$ & $-4.3\%$ & All K \\
+\midrule
+Mean & 0.0008 & 0.39 & $+17.1\%$ & $+22.2\%$ & $-5.2\%$ & 6/6 \\
+$\pm$Std & 0.0002 & 0.04 & $\pm 2.8\%$ & $\pm 2.9\%$ & -- & -- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Coupling Across Scenes}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.7\textwidth]{fig_coupling_overview.png}
+\caption{Coupling strength ($|\kappa|$ mean) and fraction of coupled entity pairs across 6 real 3DGS scenes.}
+\label{fig:coupling}
+\end{figure}
+
+All 6 real 3DGS scenes exhibit measurable coupling. Mean $|\kappa| = 0.0008$ (range $0.0006$--$0.0012$). Fig.~\ref{fig:coupling} and Table~\ref{tab:params} show the per-scene breakdown. The fraction of coupled entity pairs ranges from $16.5\%$ (room) to $32.6\%$ (garden), with a scene average of $22.3\%$.
+
+The scene with the strongest coupling is garden ($|\kappa|=0.0012$, $32.6\%$ of pairs), which also has the most Gaussians (4.4M). This suggests coupling strength may increase with scene complexity, as denser Gaussians produce more spatial overlap.
+
+\subsection{Q-Learning Captures Structure}
+
+Validation loss averages 0.39 (range 0.36--0.44) against a baseline of 1.0 (predicting mean). Performance is consistent across scenes, with no scene worse than $-56\%$ of baseline. The Q-network generalizes across diverse scene geometries (indoor rooms, outdoor gardens, countertop objects).
+
+\subsection{Learned Selection Beats Heuristic}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.85\textwidth]{fig_per_scene_mse.png}
+\caption{Per-scene selection quality. Each panel shows MSE vs budget $K$ for heuristic, Q-Learned, CEM, and a sampled oracle baseline.}
+\label{fig:per_scene}
+\end{figure}
+
+Q-based selection outperforms the motion+uncertainty heuristic at every budget $K=1..8$ in all 6 scenes. Fig.~\ref{fig:per_scene} shows the per-scene curves; Fig.~\ref{fig:aggregated} shows the cross-scene average. Average improvement: $+17.1\% \pm 2.8\%$. The gain is monotonic in $K$, rising from $+4.9\%$ at $K=1$ to $+27.4\%$ at $K=8$. This reveals an important property: \textit{better scoring compounds}---correct ordering at higher budgets matters more because more entities are affected.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.7\textwidth]{fig_aggregated.png}
+\caption{Aggregated selection quality averaged across 6 scenes. Shaded regions indicate $\pm 1$ std.}
+\label{fig:aggregated}
+\end{figure}
+
+\subsection{CEM Improves Over Independent Q-Scoring}
+
+The CEM planner adds $+5.1\%$ on average over Q-scoring ($+22.2\%$ vs $+17.1\%$). Fig.~\ref{fig:cem_results} shows per-scene breakdowns and per-budget trends.
+
+\begin{figure}[t]
+\centering
+\begin{subfigure}{0.49\textwidth}
+\includegraphics[width=\textwidth]{fig_improvement.png}
+\caption{Improvement by scene.}
+\label{fig:improvement}
+\end{subfigure}
+\hfill
+\begin{subfigure}{0.49\textwidth}
+\includegraphics[width=\textwidth]{fig_per_k_improvement.png}
+\caption{Improvement by budget $K$.}
+\label{fig:per_k}
+\end{subfigure}
+\caption{CEM consistently outperforms independent Q-scoring. The Q contribution grows with $K$; CEM adds further gains at every budget.}
+\label{fig:cem_results}
+\end{figure} The improvement is largest at intermediate budgets ($K=3$--$5$), where pairwise coupling is most relevant (enough entities to interact, not so many that selection is trivial). At $K=1$, CEM reverts to Q-ranking (no coupling possible). At $K=8$, CEM still improves ($+34.5\%$ vs $+27.4\%$), suggesting coupling affects selection at all budgets.
+
+\subsection{Oracle Gap}
+
+The gap between Q-based selection and the sampled oracle (2000 draws from $\binom{80}{4}=1.58\text{M}$) averages $-5.2\%$ at $K=4$. This negative gap---Q appearing \textit{better} than oracle---indicates that the brute-force sampling is too sparse to reliably find the optimum. CEM achieves larger negative gaps ($-11.3\%$), confirming that both methods find better subsets than 2000 random draws. This is a measurement limitation, not a structural one.
+
+\subsection{Ablation Study}
+
+\begin{figure}[t]
+\centering
+\begin{subfigure}{0.49\textwidth}
+\includegraphics[width=\textwidth]{fig_ablation.png}
+\caption{Ablation on bicycle scene.}
+\label{fig:ablation}
+\end{subfigure}
+\hfill
+\begin{subfigure}{0.49\textwidth}
+\includegraphics[width=\textwidth]{fig_varying_n.png}
+\caption{Effect of entity count $N$.}
+\label{fig:varying_n}
+\end{subfigure}
+\caption{Feature ablation and sensitivity to entity count. Cluster ID is the most important feature; $N=80$ is optimal.}
+\label{fig:ablation_results}
+\end{figure}
+
+We ablate the Q-network on the bicycle scene (Fig.~\ref{fig:ablation_results}a). The cluster ID feature is most important ($+0.048$ val loss increase when removed), followed by dropout regularization ($+0.006$), and overlap information ($+0.003$). Varying entity count $N$ (Fig.~\ref{fig:ablation_results}b) shows that $N=80$ achieves the best val loss ($0.360$), while $N=40$ is substantially worse ($0.671$) and $N=120$ slightly degrades ($0.387$), suggesting an optimal entity count for the proxy world.
+
+\section{Discussion}
+
+\paragraph{Limitations.} Our voxel proxy world captures the coupling mechanism through additive Gaussian overlaps in a shared grid, but does not replicate full 3DGS rendering (anisotropic Gaussians, spherical harmonics, CUDA rasterization). The real 3DGS experiment uses meta-entities (KMeans clusters) rather than individual Gaussians, which may obscure per-Gaussian coupling patterns. The regret measurement is limited by combinatorial sampling at higher budgets.
+
+\paragraph{Generalizability.} The coupling mechanism we identify---overlapping entities sharing the same output space---is generic. We verified $\kappa > 0$ across 6 diverse real 3DGS scenes spanning indoor, outdoor, and object-centric capture. Any 3D representation with spatial overlap (point clouds with splatting, NeRF with ray marching) likely exhibits analogous non-separability. Our Q-learning approach transfers across scenes with consistent improvement ($+17.1\% \pm 2.8\%$).
+
+\paragraph{Future work.} Scaling to per-Gaussian decisions ($N > 10^5$) requires sparse $\kappa$ computation (e.g., spatial proximity thresholds). The CEM planner could be replaced with a learned subset decoder for real-time inference without iterative sampling. Extending to sequential decisions across frames (full RL rather than per-frame scoring) is a natural next step.
+
+\section{Conclusion}
+
+We have shown that entity update decisions in 3D reconstruction exhibit non-separable coupling across 6 real 3DGS scenes (mean $|\kappa|=0.0008$, $22.3\%$ of pairs). A lightweight Q-network learns to predict marginal update benefit and achieves $+17.1\%$ improvement over a motion/uncertainty heuristic. A CEM planner further improves this to $+22.2\%$, confirming that modeling coupling during selection adds value beyond independent scoring. These results open a new direction for budgeted memory management in real-time 3D systems, with applications in robotics, VR/AR, and mobile graphics.
+
+\bibliographystyle{plain}
+\bibliography{main}
+
+\end{document}
