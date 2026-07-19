@@ -53,9 +53,9 @@ We make the following contributions:
 
 \section{Related Work}
 
-\textbf{3DGS efficiency.} Several works address the computational cost of 3DGS. Lee et al.~\cite{lee2024compact} propose compact scene representation via pruning and quantization. Yu et al.~\cite{yu2024mcmc} use MCMC sampling for densification control. Shen et al.~\cite{shen2025lodgs} introduce LOD-based rendering for large scenes. These methods optimize the static scene representation but do not address per-frame update selection under budget constraints.
+\textbf{3DGS efficiency.} Several works address the computational cost of 3DGS. Lee et al.~\cite{lee2024compact} propose compact scene representation via pruning and quantization. Kheradmand et al.~\cite{kheradmand2024mcmc} reformulate 3DGS training as Markov Chain Monte Carlo, replacing heuristic densification and pruning with principled sampling. Shen et al.~\cite{shen2025lodgs} introduce LOD-based rendering for large scenes. These methods optimize the static scene representation but do not address per-frame update selection under budget constraints.
 
-\textbf{Budgeted subset selection.} The problem of selecting a subset of items subject to cardinality constraints is well-studied in submodular optimization~\cite{krause2005near,wei2015constrained}. However, submodularity---the property of diminishing returns that enables efficient greedy algorithms---is assumed, not verified. We show that entity update benefits are non-monotone and potentially non-submodular, motivating learned selection.
+\textbf{Budgeted subset selection.} The problem of selecting a subset of items subject to cardinality constraints is well-studied in submodular optimization~\cite{krause2005near,tohidi2020submodularity}. However, submodularity---the property of diminishing returns that enables efficient greedy algorithms---is assumed, not verified. We show that entity update benefits are non-monotone and potentially non-submodular, motivating learned selection.
 
 \textbf{Learning for resource allocation.} Reinforcement learning has been applied to sensor scheduling~\cite{leong2020deep}, caching~\cite{sadeghi2019deep}, and neural network layer selection~\cite{wu2018blockdrop}. To our knowledge, ours is the first application to entity update decisions in 3D reconstruction.
 
