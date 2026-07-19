@@ -1,7 +1,6 @@
 # Memory Update Decisions as Constrained Resource Allocation in 3D Reconstruction
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![arXiv](https://img.shields.io/badge/arXiv-2406.00000-b31b1b.svg)](https://arxiv.org/abs/2406.00000)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 
 Entity-level memory update decisions in 3D Gaussian Splatting exhibit **non-separable coupling** (κ ≠ 0). A learned Q-function outperforms heuristic baselines under a compute budget.
@@ -103,7 +102,6 @@ The notebook will:
 @article{silva2026memory,
   title={Memory Update Decisions as Constrained Resource Allocation in 3D Reconstruction},
   author={Silva, Agostina},
-  journal={arXiv preprint},
   year={2026}
 }
 ```
