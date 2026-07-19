@@ -1,20 +1,12 @@
 # Memory Update Decisions as Constrained Resource Allocation in 3D Reconstruction
 
-This repository contains the code and paper for our work on non-separable coupling in entity-level memory updates for 3D Gaussian Splatting.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![arXiv](https://img.shields.io/badge/arXiv-2406.00000-b31b1b.svg)](https://arxiv.org/abs/2406.00000)
+[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 
-## Paper
+Entity-level memory update decisions in 3D Gaussian Splatting exhibit **non-separable coupling** (κ ≠ 0). A learned Q-function outperforms heuristic baselines under a compute budget.
 
-**Memory Update Decisions as Constrained Resource Allocation in 3D Reconstruction**
-
-- Author: Agostina Silva (Independent Researcher)
-- arXiv: [LINK]
-- Keywords: 3D Gaussian Splatting, Resource Allocation, Q-Learning, Coupling
-
-### Abstract
-
-Real-time 3D reconstruction systems (e.g. 3D Gaussian Splatting) face a fundamental resource allocation problem: given thousands to millions of scene entities and limited per-frame compute, which entities should be updated? We show that entity update benefits are non-separable---the value of updating entity A depends on whether B is also updated---violating the independence assumption underlying greedy selection. We formalize this as a budgeted subset selection problem, measure coupling (κ) across entity pairs in 6 real 3DGS scenes, and train a lightweight Q-network that learns to predict marginal update benefit.
-
-## Results
+## Key Results
 
 | Metric | Value |
 |--------|-------|
@@ -23,6 +15,65 @@ Real-time 3D reconstruction systems (e.g. 3D Gaussian Splatting) face a fundamen
 | CEM improvement vs heuristic | +22.2% ± 2.9% |
 | Coupled entity pairs | 22.3% on average |
 | Architecture | 16→64→32→1 MLP, ~40KB |
+
+## Coupling Heatmap
+
+![Coupling Overview](paper/figures/fig_coupling_overview.png)
+
+## Per-Scene Results
+
+![Per-Scene MSE](paper/figures/fig_per_scene_mse.png)
+
+## Aggregated Comparison
+
+![Aggregated](paper/figures/fig_aggregated.png)
+
+## Improvement Over Baselines
+
+![Improvement](paper/figures/fig_improvement.png)
+
+## Per-K Improvement
+
+![Per-K Improvement](paper/figures/fig_per_k_improvement.png)
+
+## Ablation Study
+
+![Ablation](paper/figures/fig_ablation.png)
+
+## Varying N
+
+![Varying N](paper/figures/fig_varying_n.png)
+
+## Per-Scene Breakdown
+
+| Scene | Gaussians | \|κ\| mean | Coupled % | Q improvement | CEM improvement |
+|-------|-----------|------------|-----------|---------------|-----------------|
+| room | 113K | 0.0006 | 16.5% | +21.5% | +25.6% |
+| kitchen | 168K | 0.0006 | 17.6% | +18.4% | +24.4% |
+| bonsai | 27K | 0.0007 | 17.6% | +18.5% | +23.7% |
+| counter | 103K | 0.0008 | 22.2% | +13.3% | +17.1% |
+| bicycle | 57K | 0.0009 | 27.1% | +17.0% | +22.6% |
+| garden | 4.4M | 0.0012 | 32.6% | +14.1% | +19.7% |
+
+## Setup
+
+```bash
+pip install numpy torch matplotlib scikit-learn requests scipy
+```
+
+## Usage
+
+1. Open `code/notebook.ipynb` in Jupyter or Kaggle
+2. Run all cells
+
+The notebook will:
+- Download 6 real 3DGS scenes from HuggingFace (bicycle, bonsai, counter, garden, room, kitchen)
+- Build voxel proxy worlds with N=80 meta-entities
+- Compute coupling matrix κ for each scene
+- Train a Q-network to predict update benefit
+- Evaluate: heuristic, Q-learned, CEM planner, random, frequency baselines
+- Run ablation study
+- Generate all figures
 
 ## Repository Structure
 
@@ -46,36 +97,6 @@ Real-time 3D reconstruction systems (e.g. 3D Gaussian Splatting) face a fundamen
     └── summary.json      # Aggregated summary
 ```
 
-## Setup
-
-```bash
-pip install numpy torch matplotlib scikit-learn requests scipy
-```
-
-## Usage
-
-1. Open `code/notebook.ipynb` in Jupyter or Kaggle
-2. Run all cells
-3. The notebook will:
-   - Download 6 real 3DGS scenes from HuggingFace
-   - Build voxel proxy worlds with N=80 meta-entities
-   - Compute coupling matrix κ for each scene
-   - Train a Q-network to predict update benefit
-   - Evaluate: heuristic, Q-learned, CEM planner, random, frequency baselines
-   - Run ablation study
-   - Generate all figures
-
-## Scenes
-
-| Scene | Gaussians | \|κ\| mean | Coupled % |
-|-------|-----------|------------|-----------|
-| room | 1130 | 0.0006 | 16.5% |
-| kitchen | 1685 | 0.0006 | 17.6% |
-| bonsai | 273 | 0.0007 | 17.6% |
-| counter | 1029 | 0.0008 | 22.2% |
-| bicycle | 568 | 0.0009 | 27.1% |
-| garden | 4386 | 0.0012 | 32.6% |
-
 ## Citation
 
 ```bibtex
@@ -89,4 +110,4 @@ pip install numpy torch matplotlib scikit-learn requests scipy
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
