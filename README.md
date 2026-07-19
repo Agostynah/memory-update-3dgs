@@ -2,6 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![Kaggle](https://img.shields.io/badge/Kaggle-Notebook-blue.svg)](https://www.kaggle.com/code/datatalesbyagos/memory-update-decisions)
 
 Entity-level memory update decisions in 3D Gaussian Splatting exhibit **non-separable coupling** (κ ≠ 0). A learned Q-function outperforms heuristic baselines under a compute budget.
 
